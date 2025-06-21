@@ -1,0 +1,162 @@
+---title:"Drink Demand Forecast"
+output:html_document:---# 1. Introduction
+
+This report details the development of a time series forecasting model to predict daily drink sales. The primary goal is to provide reliable forecasts that can inform inventory management and staffing decisions. We use the `prophet` package in R to account for seasonality and public holidays. The model's in-sample fit is evaluated using Mean Absolute Error (MAE), and the final forecast is exported to a CSV file.
+
+# 2. Setup
+
+First, we load the necessary R packages for the analysis.
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+# This chunk loads all necessary libraries.
+
+library(prophet)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+```
+
+As the original sales data is sensitive, this report uses a generated dataset. This data mimics realistic sales patterns—including trend, weekly, and yearly seasonality—to demonstrate the forecasting methodology in a reproducible way.
+
+```{r data_generation, echo=FALSE}
+set.seed(42)
+
+# Define the date range for the generated data
+start_date <- as.Date("2021-01-01")
+end_date <- as.Date("2025-01-28")
+date_sequence <- seq(start_date, end_date, by = "day")
+n_days <- length(date_sequence)
+
+# Create realistic seasonal patterns and a slight upward trend
+trend <- 0.05 * (1:n_days)
+weekly_effect <- 15 * sin(2 * pi * as.numeric(format(date_sequence, "%w")) / 7)
+yearly_effect <- 40 * sin(2 * pi * (1:n_days) / 365.25)
+noise <- rnorm(n_days, mean = 0, sd = 15)
+
+# Combine components to create the final sales data
+simulated_sales <- 150 + trend + weekly_effect + yearly_effect + noise
+
+# Create the final data frame in the format Prophet requires
+df <- data.frame(
+  ds = date_sequence,
+  y = simulated_sales
+)
+
+# Display the first few rows of the generated data
+knitr::kable(head(df), caption = "First 6 Rows of Generated Sales Data")
+```
+
+# 3. Modeling Holiday Effects
+
+To improve accuracy, we explicitly model the impact of major public holidays. A data frame containing past and future holiday dates through 2026 is created.
+
+```{r holiday_creation}
+# Create holiday data frame
+holidays <- data.frame(
+  holiday = c(rep('New Year Day', 6), rep('Good Friday', 6), rep('National Patriots Day', 6),
+              rep('Saint - Jean - Baptiste Day', 6), rep('Canada Day', 6), rep('Labour Day', 6),
+              rep('Thanksgiving', 6), rep('Christmas Day', 6)),
+  ds = as.Date(c(
+    '2021 - 01 - 01', '2022 - 01 - 01', '2023 - 01 - 01', '2024 - 01 - 01', '2025 -
+01 - 01', '2026 - 01 - 01',
+'2021 - 04 - 02', '2022 - 04 - 15', '2023 - 04 - 07', '2024 - 03 - 29', '2025 -
+04 - 18', '2026 - 04 - 03',
+'2021 - 05 - 24', '2022 - 05 - 23', '2023 - 05 - 22', '2024 - 05 - 20', '2025 -
+05 - 19', '2026 - 05 - 18',
+'2021 - 06 - 24', '2022 - 06 - 24', '2023 - 06 - 24', '2024 - 06 - 24', '2025 -
+06 - 24', '2026 - 06 - 24',
+'2021 - 07 - 01', '2022 - 07 - 01', '2023 - 07 - 01', '2024 - 07 - 01', '2025 -
+07 - 01', '2026 - 07 - 01',
+'2021 - 09 - 06', '2022 - 09 - 05', '2023 - 09 - 04', '2024 - 09 - 02', '2025 -
+09 - 01', '2026 - 09 - 07',
+'2021 - 10 - 11', '2022 - 10 - 10', '2023 - 10 - 09', '2024 - 10 - 14', '2025 -
+10 - 13', '2026 - 10 - 12',
+'2021 - 12 - 25', '2022 - 12 - 25', '2023 - 12 - 25', '2024 - 12 - 25', '2025 -
+12 - 25', '2026 - 12 - 25'
+  )),
+lower_window = 0,
+upper_window = 0
+)
+```
+
+# 4. Model Fitting and Forecasting
+
+The Prophet model is fitted to the historical data, including holidays. We then generate a forecast for the next 365 days.
+
+```{r model_fitting_and_forecasting, warning=FALSE}
+# Fit the Prophet model with holidays
+m <- prophet(df, holidays = holidays)
+
+# Create future dataframe and generate forecast
+future <- make_future_dataframe(m, periods = 365)
+forecast <- predict(m, future)
+
+# Display the tail of the forecast to see the predicted values
+knitr::kable(tail(forecast[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')]), caption = "Last 6 Days of Forecast")
+```
+
+# 5. Model Accuracy
+
+We calculate the Mean Absolute Error (MAE) to evaluate how well the model fits the historical data. MAE is a robust metric that is not affected by zero-sales days and is measured in the same units as the data (in this case, number of drinks).
+
+```{r mae_calculation}
+# Calculate in-sample accuracy (MAE)
+# Merge actual values (y) with predictions (yhat)
+comparison_df <- forecast %>%
+  select(ds, yhat) %>%
+  left_join(df, by = "ds")
+
+# Filter for the historical period where we have actual sales
+comparison_df <- comparison_df %>%
+  filter(!is.na(y))
+
+# Calculate MAE
+mae <- mean(abs(comparison_df$y - comparison_df$yhat), na.rm = TRUE)
+
+# Print the result in a formatted string
+cat(sprintf("Model Fit (In-Sample) MAE: %.2f\n", mae))
+```
+
+The MAE indicates that the model's predictions on the historical data were, on average, off by the number of drinks shown above.
+
+# 6. Forecast Visualization and Export
+
+## 6.1. Main Forecast Plot
+The plot below shows the historical data (black dots), the model's forecast (`yhat`, blue line), and the 95% uncertainty interval.
+
+```{r plot_forecast}
+# Plot the main forecast
+plot(m, forecast) +
+  add_changepoints_to_plot(m) +
+  ggtitle("Drink Demand Forecast (Next Year)") +
+  xlab("Date") +
+  ylab("Drinks Sold") +
+  theme_minimal()
+```
+
+## 6.2. Forecast Components
+This plot decomposes the forecast into its underlying components, helping to explain *why* the model is making its predictions.
+
+```{r plot_components}
+# Plot the forecast components
+prophet_plot_components(m, forecast)
+```
+
+## 6.3. Interactive Forecast Plot
+This plot is interactive. You can hover over points to see specific values and zoom into different time periods.
+
+```{r plot_interactive,warning=FALSE}
+# Create an interactive plot
+ggplotly(plot(m, forecast))
+```
+
+## 6.4. Exporting Results
+Finally, the forecast data is saved to a CSV file for use in other applications or reports.
+
+```{r export_csv}
+# Export the forecast to a CSV file
+forecast_to_save <- forecast %>%
+  select(ds, yhat, yhat_lower, yhat_upper)
+
+write.csv(forecast_to_save, "drink_demand_forecast.csv", row.names = FALSE)
