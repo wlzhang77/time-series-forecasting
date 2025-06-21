@@ -21,3 +21,5 @@ The primary goal is to create a reliable forecast that can assist with operation
 * **Data Export:** Saves the final forecast results to a clean `drink_demand_forecast.csv` file for use in other applications or reports.
 
 ---
+![Screenshot 2025-06-21 004712](https://github.com/user-attachments/assets/45fc1cd6-07d3-407b-b8ae-d537368428af)
+![Screenshot 2025-06-21 004747](https://github.com/user-attachments/assets/c7c12196-e64f-4898-93bc-82527ec0dc72)
